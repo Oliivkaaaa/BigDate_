@@ -1,0 +1,46 @@
+import psycopg2
+import pandas as pd
+
+conn = psycopg2.connect(
+    database="home",
+    host="212.8.247.94",
+    user="studen",
+    password="gendalfthegreat",
+    port="5432"
+)
+conn.autocommit = False
+cursor = conn.cursor()
+
+file_path = 'medical.xlsx'
+df = pd.read_excel(file_path, sheet_name='easy', header=0, index_col=None)
+
+cursor.executemany("""
+    INSERT INTO de.med_results(patient_id, analysis_id, value)
+    VALUES (%s, %s, %s)
+""", df.values.tolist())
+conn.commit()
+
+query = """
+SELECT p.phone, p.name, a.analysis_name, 
+       CASE 
+           WHEN r.value < a.min_value THEN 'Понижен'
+           WHEN r.value > a.max_value THEN 'Повышен'
+       END AS conclusion
+FROM de.med_results r
+JOIN de.patients p ON r.patient_id = p.id
+JOIN de.med_an_name a ON r.analysis_id = a.id
+WHERE r.value < a.min_value OR r.value > a.max_value;
+"""
+cursor.execute(query)
+records = cursor.fetchall()
+
+columns = [desc[0] for desc in cursor.description]
+df_result = pd.DataFrame(records, columns=columns)
+
+output_file = 'medical_results_out.xlsx'
+df_result.to_excel(output_file, sheet_name='Results', header=True, index=False)
+
+cursor.close()
+conn.close()
+
+print(f'Результаты сохранены в {output_file}')
